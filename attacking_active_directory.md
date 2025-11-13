@@ -93,6 +93,7 @@ Requirements : SMB signing must be disabled on the target ; Relayed user credent
 **Step 1:** `nano /usr/share/responder/Responder.conf` and turn off SMB and HTTP
 
 ![](assets/relay1.png)
+
 By default, Responder will happily answer SMB/HTTP requests itself.  
 But for an SMB relay attack, we want Responder to **collect and pass NTLM auth to ntlmrelayx** instead of grabbing hashes.
 
