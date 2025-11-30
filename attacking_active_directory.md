@@ -55,8 +55,8 @@ one Domain Controller : `DC1`
 2 Windows 10 clients : `client` and `client2`
 2 user accounts : `younesb` and `petep`
 1 service admin : `SQLService`
-1 user admin account: `tstark`
-(TO-DO: structure and network diagram )
+1 user admin account : `tstark`
+**(SEE PROJECT STRUCTURE IN README)**
 ### Initial attack vectors
 
 #### LLMNR Poisoning :
